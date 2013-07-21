@@ -4,26 +4,31 @@ require 'uri'
 require 'cgi'
 
 class ApiUrlHelper
-  DELAY_MAX = 10
+  DELAY_MAX = 2 * 60
 
   def check_url(url, keys)
     uri = URI(url)
-    params = URI.decode_www_form(uri.query)
-    p = CGI.parse(uri.query)
 
+    # get the params values
+    p = CGI.parse(uri.query)
     user_id = p["id"].first
     hash = p["hash"].first
     date = p["date"].first
 
-    diff = Time.now.to_i - date.to_i
+    # remove the 'hash' param
+    params = URI.decode_www_form(uri.query)
+    uri.query = URI.encode_www_form params.delete_if {|p| p[0] == "hash" }
 
-    if diff > DELAY_MAX
-      false
-    else
-      uri.query = URI.encode_www_form params.delete_if {|p| p[0] == "hash" }
-      ghash = hmac uri.to_s, keys[user_id]
-      ghash == hash
-    end
+    # checks the values
+    raise "Unknow user: '#{user_id}'" unless keys[user_id]
+
+    ghash = hmac uri.to_s, keys[user_id]
+    raise "HMAC is not valid" unless ghash == hash
+
+    diff = Time.now.to_i - date.to_i
+    raise "Delay max reached: #{diff} secs (max: #{DELAY_MAX} secs)" unless diff <= DELAY_MAX
+
+    true
   end
 
   def build_url(url, user)
